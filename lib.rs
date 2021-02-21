@@ -3,15 +3,23 @@
 use ink_lang as ink;
 
 #[ink::contract]
-mod vote {
+mod vote_manager {
 
+    // use executor_trait::iexecutor::Executor;
+    // use executor_trait::{Executor};
+
+    #[cfg(not(feature = "ink-as-dependency"))]
     use ink_storage::{
-        collections::HashMap as StorageHashMap,
+        collections::{
+            HashMap as StorageHashMap,
+        },
         traits::{
             PackedLayout,
             SpreadLayout,
         }
     };
+
+    type VoteId = u64;
 
     #[derive(Debug, PartialEq, Eq, scale::Encode, scale::Decode, PackedLayout, SpreadLayout)]
     #[cfg_attr(feature = "std", derive(scale_info::TypeInfo, ink_storage::traits::StorageLayout))]
@@ -21,9 +29,17 @@ mod vote {
         Nay,
     }
 
-    type VoterStateMap = StorageHashMap<AccountId, VoterState>;
-
-    #[ink(storage)]
+    #[derive(scale::Encode, scale::Decode, SpreadLayout, PackedLayout)]
+    #[cfg_attr(
+        feature = "std",
+        derive(
+            Debug,
+            PartialEq,
+            Eq,
+            scale_info::TypeInfo,
+            ink_storage::traits::StorageLayout
+        )
+    )]
     pub struct Vote {
         executed: bool,
         start_date: u64,
@@ -31,43 +47,114 @@ mod vote {
         support_require_pct: u64,
         yea: u64,
         nay: u64,
-        voters: VoterStateMap,
     }
 
-    impl Vote {
+    #[ink(storage)]
+    pub struct VoteManager {
+        support_require_pct: u64,
+        min_require_num: u64,
+        votes_length: u64,
+        vote_time: u64,
+        votes: StorageHashMap<VoteId, Vote>,
+        voters: StorageHashMap<(VoteId, AccountId), VoterState>,
+    }
+
+    #[ink(event)]
+    pub struct StartVote {
+        #[ink(topic)]
+        vote_id: VoteId,
+
+        #[ink(topic)]
+        creator: AccountId,
+    }
+
+    #[ink(event)]
+    pub struct CastVote {
+        #[ink(topic)]
+        vote_id: VoteId,
+
+        #[ink(topic)]
+        voter: AccountId,
+
+        support: bool,
+    }
+
+    #[ink(event)]
+    pub struct ExecuteVote {
+        #[ink(topic)]
+        vote_id: VoteId,
+    }
+
+    impl VoteManager {
 
         #[ink(constructor)]
-        pub fn new(_vote_time: u64, _support_require_pct: u64) -> Self {
+        pub fn new(_vote_time: u64, support_require_pct: u64, min_require_num: u64) -> Self {
             Self { 
-                executed: false,
-                start_date: Self::env().block_timestamp(),
-                support_require_pct: _support_require_pct,
+                support_require_pct,
+                min_require_num,
+                votes_length: 0,
                 vote_time: _vote_time,
-                yea: 0,
-                nay: 0,
+                votes: StorageHashMap::default(),
                 voters: StorageHashMap::default(),
             }
         }
 
         #[ink(message)]
-        pub fn vote(&mut self, _supports: bool, _voter: AccountId) {
-            let vote_state = self.voters.get(&_voter);
-            if vote_state.is_some() {
-                match vote_state {
-                    None => (),
-                    Some(VoterState::Yea) => self.yea -= 1,
-                    Some(VoterState::Nay) => self.nay -= 1,
-                    Some(VoterState::Absent) => (),
+        pub fn new_vote(&mut self) {
+            let vote_id = self.votes_length.clone();
+            self.votes_length += 1;
+            let start_date: u64 = self.env().block_timestamp();
+            let vote = Vote{
+                executed: false,
+                start_date: start_date,
+                vote_time: self.vote_time.clone(),
+                support_require_pct: self.support_require_pct.clone(),
+                yea: 0,
+                nay: 0,
+            };
+            self.votes.insert(vote_id, vote);
+            self.env().emit_event(StartVote{
+                vote_id,
+                creator: self.env().caller(),
+            });
+        }
+
+        #[ink(message)]
+        pub fn vote(&mut self, vote_id: VoteId,  support: bool, voter: AccountId) {
+            assert!(self.vote_exists(vote_id));
+            if let Some(vote) = self.votes.get_mut(&vote_id) {
+                if let Some(vote_state) = self.voters.get(&(vote_id, voter)) {
+                    match vote_state {
+                        VoterState::Yea => {
+                            vote.yea -= 1;
+                        },
+                        VoterState::Nay => {
+                            vote.nay -= 1;
+                        },
+                        VoterState::Absent => (),
+                    }
                 }
-            }
-            if _supports {
-                self.yea += 1;
-                self.voters[&_voter] = VoterState::Yea;
-            } else {
-                self.nay += 1;
-                self.voters[&_voter] = VoterState::Nay;
+                if support {
+                    vote.yea += 1;
+                    self.voters[&(vote_id, voter)] = VoterState::Yea;
+                } else {
+                    vote.nay += 1;
+                    self.voters[&(vote_id, voter)] = VoterState::Nay;
+                }
+                self.env().emit_event(CastVote{
+                    vote_id,
+                    voter: self.env().caller(), 
+                    support,
+                });
             }
         }
-        
+
+        fn vote_exists(&self, vote_id: u64) -> bool {
+            return vote_id < self.votes_length;
+        }
+
+        fn is_vote_open(&self, vote: Vote) -> bool {
+            return self.env().block_timestamp() < vote.start_date + self.vote_time && !vote.executed;
+        }
     }
 }
