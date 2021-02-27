@@ -1,12 +1,14 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use ink_lang as ink;
+extern crate alloc;
 
-#[ink::contract]
+#[ink::contract(dynamic_storage_allocator = true)]
 mod vote_manager {
 
     // use executor_trait::iexecutor::Executor;
     // use executor_trait::{Executor};
+    use alloc::vec::Vec;
 
     #[cfg(not(feature = "ink-as-dependency"))]
     use ink_storage::{
@@ -72,6 +74,30 @@ mod vote_manager {
         support_num: u64,
         choices: StorageBox<StorageVec<Choice>>,
     }
+
+    #[derive(scale::Encode, scale::Decode, SpreadLayout, PackedLayout)]
+    #[cfg_attr(
+        feature = "std",
+        derive(
+            Debug,
+            PartialEq,
+            Eq,
+            scale_info::TypeInfo,
+            ink_storage::traits::StorageLayout
+        )
+    )]
+    pub struct DisplayVote {
+        executed: bool,
+        title: String,
+        desc: String,
+        start_date: u64,
+        vote_time: u64,
+        support_require_pct: u64,
+        min_require_num: u64,
+        support_num: u64,
+        choices: String,
+    }
+
 
     #[ink(storage)]
     pub struct VoteManager {
@@ -182,6 +208,34 @@ mod vote_manager {
             } else {
                 false
             }
+        }
+
+        #[ink(message)]
+        pub fn query_all_vote(&mut self) -> alloc::vec::Vec<DisplayVote> {
+            let mut v: alloc::vec::Vec<DisplayVote> = alloc::vec::Vec::new();
+            for (_, val) in &self.votes {
+                let choices = &val.choices;
+                let iter = choices.iter();
+                let mut choices_vec = Vec::new();
+                for val in iter {
+                    let s = format!("{0}:{1}", val.content.clone(), val.yea);
+                    choices_vec.push(s);
+                }
+                let choices_content = choices_vec.join(",");
+                let vote = DisplayVote{
+                    executed: val.executed,
+                    title: val.title.clone(),
+                    desc: val.desc.clone(),
+                    start_date: val.start_date,
+                    vote_time: val.vote_time,
+                    support_require_pct: val.support_require_pct,
+                    min_require_num: val.min_require_num,
+                    support_num: val.support_num,
+                    choices: choices_content,
+                };
+                v.push(vote);
+            }
+            return v;
         }
 
         fn vote_exists(&self, vote_id: u64) -> bool {
