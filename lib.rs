@@ -160,15 +160,16 @@ mod vote_manager {
                 if support_choice > vote.choices.len() {
                     return false;
                 }
-                let choices = &mut vote.choices;
-                let voter_choice = choices.get_mut(support_choice).unwrap();
                 // has voted
                 if let Some(choice_id) = self.voters.get(&(vote_id, voter)) {
                     if *choice_id != support_choice {
+                        let choices = &mut vote.choices;
                         choices.get_mut(*choice_id).unwrap().yea -= 1;
                         vote.support_num -= 1;
                     }
                 } 
+                let choices = &mut vote.choices;
+                let voter_choice = choices.get_mut(support_choice).unwrap();
                 voter_choice.yea += 1;
                 self.voters.insert((vote_id, voter), support_choice);    
                 vote.support_num += 1;
