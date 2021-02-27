@@ -8,7 +8,9 @@ mod vote_manager {
 
     // use executor_trait::iexecutor::Executor;
     // use executor_trait::{Executor};
+    use alloc::format;
     use alloc::vec::Vec;
+    use alloc::string::String;
 
     #[cfg(not(feature = "ink-as-dependency"))]
     use ink_storage::{
@@ -164,7 +166,7 @@ mod vote_manager {
             for choice_content in split {
                 vote.choices.push(Choice{
                     choice_id: index,
-                    content: choice_content.to_string(),
+                    content: String::from(choice_content),
                     yea: 0,
                 });
                 index += 1;
@@ -175,6 +177,14 @@ mod vote_manager {
                 creator: self.env().caller(),
             });
             vote_id
+        }
+
+        #[ink(message)]
+        pub fn execute(&mut self, vote_id: VoteId) -> bool {
+            if !self.vote_exists(vote_id) {
+                return false;
+            }
+            true 
         }
 
         #[ink(message)]
