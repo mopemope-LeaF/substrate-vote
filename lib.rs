@@ -214,43 +214,94 @@ mod vote_manager {
         pub fn query_all_vote(&mut self) -> alloc::vec::Vec<DisplayVote> {
             let mut v: alloc::vec::Vec<DisplayVote> = alloc::vec::Vec::new();
             for (_, val) in &self.votes {
-                let choices = &val.choices;
-                let iter = choices.iter();
+                let vote = self.convert_vote_to_displayvote(&val);
+                v.push(vote);
+            }
+            return v;
+        }
+
+        #[ink(message)]
+        pub fn query_executed_vote(&mut self) -> alloc::vec::Vec<DisplayVote> {
+            let mut v: alloc::vec::Vec<DisplayVote> = alloc::vec::Vec::new();
+            for (_, val) in &self.votes {
+                if self.is_vote_executed(&val) {
+                    let vote = self.convert_vote_to_displayvote(&val);
+                    v.push(vote);
+                }
+            }
+            return v;
+        }
+
+        #[ink(message)]
+        pub fn query_open_vote(&mut self) -> alloc::vec::Vec<DisplayVote> {
+            let mut v: alloc::vec::Vec<DisplayVote> = alloc::vec::Vec::new();
+            for (_, val) in &self.votes {
+                if self.is_vote_open(&val) {
+                    let vote = self.convert_vote_to_displayvote(&val);
+                    v.push(vote);
+                }
+            }
+            return v;
+        }
+
+        #[ink(message)]
+        pub fn query_wait_vote(&mut self) -> alloc::vec::Vec<DisplayVote> {
+            let mut v: alloc::vec::Vec<DisplayVote> = alloc::vec::Vec::new();
+            for (_, val) in &self.votes {
+                if self.is_vote_wait(&val) {
+                    let vote = self.convert_vote_to_displayvote(&val);
+                    v.push(vote);
+                }
+            }
+            return v;
+        }
+ 
+
+        fn format_choices_to_string(&self, source: &StorageBox<StorageVec<Choice>>) -> String {
+            let iter = source.iter();
                 let mut choices_vec = Vec::new();
                 for val in iter {
                     let s = format!("{0}:{1}", val.content.clone(), val.yea);
                     choices_vec.push(s);
                 }
-                let choices_content = choices_vec.join(",");
-                let vote = DisplayVote{
-                    executed: val.executed,
-                    title: val.title.clone(),
-                    desc: val.desc.clone(),
-                    start_date: val.start_date,
-                    vote_time: val.vote_time,
-                    support_require_pct: val.support_require_pct,
-                    min_require_num: val.min_require_num,
-                    support_num: val.support_num,
-                    choices: choices_content,
-                };
-                v.push(vote);
-            }
-            return v;
+                let choices_content = choices_vec.join(","); 
+                return choices_content;
+        }
+
+        fn convert_vote_to_displayvote(&self, vote: &Vote) -> DisplayVote {
+            let choices = &vote.choices;
+            let choices_content = self.format_choices_to_string(choices);
+            let vote = DisplayVote{
+                executed: vote.executed,
+                title: vote.title.clone(),
+                desc: vote.desc.clone(),
+                start_date: vote.start_date,
+                vote_time: vote.vote_time,
+                support_require_pct: vote.support_require_pct,
+                min_require_num: vote.min_require_num,
+                support_num: vote.support_num,
+                choices: choices_content,
+            };
+            vote
         }
 
         fn vote_exists(&self, vote_id: u64) -> bool {
             return vote_id < self.votes_length;
         }
 
-        fn is_vote_open(&self, vote: Vote) -> bool {
+        fn is_vote_open(&self, vote: &Vote) -> bool {
             return self.env().block_timestamp() < vote.start_date + vote.vote_time && !vote.executed;
         }
 
-        fn is_vote_executed(&self, vote: Vote) -> bool {
+        fn is_vote_wait(&self, vote: &Vote) -> bool {
+            return self.env().block_timestamp() > vote.start_date + vote.vote_time && !vote.executed;
+        }
+
+        fn is_vote_executed(&self, vote: &Vote) -> bool {
             return !vote.executed;
         }
 
-        fn is_vote_finished(&self, vote: Vote) -> bool {
+        fn is_vote_finished(&self, vote: &Vote) -> bool {
             return self.env().block_timestamp() < vote.start_date + vote.vote_time;
         }
     }
