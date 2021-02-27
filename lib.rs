@@ -121,25 +121,25 @@ mod vote_manager {
 
         #[ink(message)]
         pub fn vote(&mut self, vote_id: VoteId,  support: bool, voter: AccountId) {
-            assert!(self.vote_exists(vote_id));
-            if let Some(vote) = self.votes.get_mut(&vote_id) {
+            // assert!(self.vote_exists(vote_id));
+            if let Some(_vote) = self.votes.get_mut(&vote_id) {
                 if let Some(vote_state) = self.voters.get(&(vote_id, voter)) {
                     match vote_state {
                         VoterState::Yea => {
-                            vote.yea -= 1;
+                            _vote.yea -= 1;
                         },
                         VoterState::Nay => {
-                            vote.nay -= 1;
+                            _vote.nay -= 1;
                         },
                         VoterState::Absent => (),
                     }
                 }
                 if support {
-                    vote.yea += 1;
-                    self.voters[&(vote_id, voter)] = VoterState::Yea;
+                    _vote.yea += 1;
+                    self.voters.insert((vote_id, voter), VoterState::Yea);
                 } else {
-                    vote.nay += 1;
-                    self.voters[&(vote_id, voter)] = VoterState::Nay;
+                    _vote.nay += 1;
+                    self.voters.insert((vote_id, voter), VoterState::Nay);
                 }
                 self.env().emit_event(CastVote{
                     vote_id,
@@ -147,6 +147,11 @@ mod vote_manager {
                     support,
                 });
             }
+        }
+
+        #[ink(message)]
+        pub fn next_index(&self) -> u64 {
+            self.votes_length
         }
 
         fn vote_exists(&self, vote_id: u64) -> bool {
