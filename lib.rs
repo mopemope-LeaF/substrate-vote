@@ -232,13 +232,14 @@ mod vote_manager {
         }
 
         #[ink(message)]
-        pub fn query_one_vote(&self, vote_id: VoteId) -> Option<DisplayVote> {
-            if !self.vote_exists(vote_id) {
-                return None;
-            }
+        pub fn query_one_vote(&self, vote_id: VoteId) -> DisplayVote {
+            // if !self.vote_exists(vote_id) {
+                // return None;
+            // }
+            assert!(self.vote_exists(vote_id));
             let vote = self.votes.get(&vote_id).unwrap(); 
             let display_vote = self.convert_vote_to_displayvote(&vote); 
-            return Some(display_vote);
+            display_vote
         }
 
         // #[ink(message)]
