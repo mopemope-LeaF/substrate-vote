@@ -9,6 +9,7 @@ mod vote_manager {
     // use executor_trait::iexecutor::Executor;
     // use executor_trait::{Executor};
     use alloc::format;
+    use alloc::vec;
     use alloc::vec::Vec;
     use alloc::string::String;
 
@@ -18,7 +19,6 @@ mod vote_manager {
             HashMap as StorageHashMap,
             Vec as StorageVec,
         },
-        Box as StorageBox,
         traits::{
             PackedLayout,
             SpreadLayout,
@@ -74,7 +74,8 @@ mod vote_manager {
         support_require_pct: u64,
         min_require_num: u64,
         support_num: u64,
-        choices: StorageBox<StorageVec<Choice>>,
+        choice_index_lo: u32,
+        choice_index_ho: u32,
     }
 
     #[derive(scale::Encode, scale::Decode, SpreadLayout, PackedLayout)]
@@ -106,6 +107,8 @@ mod vote_manager {
         votes_length: u64,
         votes: StorageHashMap<VoteId, Vote>,
         voters: StorageHashMap<(VoteId, AccountId), ChoiceId>,
+        choices: StorageVec<Choice>,
+        choices_num: u32,
     }
 
     #[ink(event)]
@@ -142,6 +145,8 @@ mod vote_manager {
                 votes_length: 0,
                 votes: StorageHashMap::default(),
                 voters: StorageHashMap::default(),
+                choices: StorageVec::default(),
+                choices_num: 0,
             }
         }
 
@@ -150,7 +155,8 @@ mod vote_manager {
             let vote_id = self.votes_length.clone();
             self.votes_length += 1;
             let start_date: u64 = self.env().block_timestamp();
-            let mut vote = Vote{
+            let vec: Vec<&str> = choices.split(",").collect();
+            let vote = Vote{
                 executed: false,
                 title,
                 desc,
@@ -159,14 +165,15 @@ mod vote_manager {
                 support_require_pct,
                 min_require_num,
                 support_num: 0,
-                choices: StorageBox::new(StorageVec::default()),
+                choice_index_lo: self.choices_num,
+                choice_index_ho: self.choices_num + vec.len() as u32,
             };
+            self.choices_num += vec.len() as u32;
             let mut index = 0;
-            let split = choices.split(",");
-            for choice_content in split {
-                vote.choices.push(Choice{
+            for choice_content in vec.iter() {
+                self.choices.push(Choice{
                     choice_id: index,
-                    content: String::from(choice_content),
+                    content: String::from(*choice_content),
                     yea: 0,
                 });
                 index += 1;
@@ -179,13 +186,13 @@ mod vote_manager {
             vote_id
         }
 
-        #[ink(message)]
-        pub fn execute(&mut self, vote_id: VoteId) -> bool {
-            if !self.vote_exists(vote_id) {
-                return false;
-            }
-            true 
-        }
+        // #[ink(message)]
+        // pub fn execute(&mut self, vote_id: VoteId) -> bool {
+        //     if !self.vote_exists(vote_id) {
+        //         return false;
+        //     }
+        //     true 
+        // }
 
         #[ink(message)]
         pub fn vote(&mut self, vote_id: VoteId, support_choice: u32, voter: AccountId) -> bool {
@@ -193,20 +200,24 @@ mod vote_manager {
                 return false;
             }
             if let Some(vote) = self.votes.get_mut(&vote_id) {
-                if support_choice > vote.choices.len() {
+                if support_choice > vote.choice_index_ho - vote.choice_index_lo {
                     return false;
                 }
+                // let choice_vec_index = vote.choice_index_lo + support_choice;
                 // has voted
                 if let Some(choice_id) = self.voters.get(&(vote_id, voter)) {
                     if *choice_id != support_choice {
-                        let choices = &mut vote.choices;
-                        choices.get_mut(*choice_id).unwrap().yea -= 1;
+                        let choice_vec_index = vote.choice_index_lo + *choice_id;
+                        let choices = &mut self.choices;
+                        choices.get_mut(choice_vec_index).unwrap().yea -= 1;
                         vote.support_num -= 1;
                     }
                 } 
-                let choices = &mut vote.choices;
-                let voter_choice = choices.get_mut(support_choice).unwrap();
+                let choices = &mut self.choices;
+                let choice_vec_index = vote.choice_index_lo + support_choice;
+                let voter_choice = choices.get_mut(choice_vec_index).unwrap();
                 voter_choice.yea += 1;
+                // record voter choice id
                 self.voters.insert((vote_id, voter), support_choice);    
                 vote.support_num += 1;
                 self.env().emit_event(CastVote{
@@ -221,66 +232,73 @@ mod vote_manager {
         }
 
         #[ink(message)]
-        pub fn query_all_vote(&mut self) -> alloc::vec::Vec<DisplayVote> {
-            let mut v: alloc::vec::Vec<DisplayVote> = alloc::vec::Vec::new();
-            for (_, val) in &self.votes {
-                let vote = self.convert_vote_to_displayvote(&val);
-                v.push(vote);
+        pub fn query_one_vote(&self, vote_id: VoteId) -> Option<DisplayVote> {
+            if !self.vote_exists(vote_id) {
+                return None;
             }
-            return v;
+            let vote = self.votes.get(&vote_id).unwrap(); 
+            let display_vote = self.convert_vote_to_displayvote(&vote); 
+            return Some(display_vote);
         }
 
-        #[ink(message)]
-        pub fn query_executed_vote(&mut self) -> alloc::vec::Vec<DisplayVote> {
-            let mut v: alloc::vec::Vec<DisplayVote> = alloc::vec::Vec::new();
-            for (_, val) in &self.votes {
-                if self.is_vote_executed(&val) {
-                    let vote = self.convert_vote_to_displayvote(&val);
-                    v.push(vote);
-                }
-            }
-            return v;
-        }
+        // #[ink(message)]
+        // pub fn query_all_vote(&mut self) -> alloc::vec::Vec<DisplayVote> {
+        //     let mut v: alloc::vec::Vec<DisplayVote> = alloc::vec::Vec::new();
+        //     for (_, val) in &self.votes {
+        //         let vote = self.convert_vote_to_displayvote(&val);
+        //         v.push(vote);
+        //     }
+        //     return v;
+        // }
 
-        #[ink(message)]
-        pub fn query_open_vote(&mut self) -> alloc::vec::Vec<DisplayVote> {
-            let mut v: alloc::vec::Vec<DisplayVote> = alloc::vec::Vec::new();
-            for (_, val) in &self.votes {
-                if self.is_vote_open(&val) {
-                    let vote = self.convert_vote_to_displayvote(&val);
-                    v.push(vote);
-                }
-            }
-            return v;
-        }
+        // #[ink(message)]
+        // pub fn query_executed_vote(&mut self) -> alloc::vec::Vec<DisplayVote> {
+        //     let mut v: alloc::vec::Vec<DisplayVote> = alloc::vec::Vec::new();
+        //     for (_, val) in &self.votes {
+        //         if self.is_vote_executed(&val) {
+        //             let vote = self.convert_vote_to_displayvote(&val);
+        //             v.push(vote);
+        //         }
+        //     }
+        //     return v;
+        // }
 
-        #[ink(message)]
-        pub fn query_wait_vote(&mut self) -> alloc::vec::Vec<DisplayVote> {
-            let mut v: alloc::vec::Vec<DisplayVote> = alloc::vec::Vec::new();
-            for (_, val) in &self.votes {
-                if self.is_vote_wait(&val) {
-                    let vote = self.convert_vote_to_displayvote(&val);
-                    v.push(vote);
-                }
-            }
-            return v;
-        }
+        // #[ink(message)]
+        // pub fn query_open_vote(&mut self) -> alloc::vec::Vec<DisplayVote> {
+        //     let mut v: alloc::vec::Vec<DisplayVote> = alloc::vec::Vec::new();
+        //     for (_, val) in &self.votes {
+        //         if self.is_vote_open(&val) {
+        //             let vote = self.convert_vote_to_displayvote(&val);
+        //             v.push(vote);
+        //         }
+        //     }
+        //     return v;
+        // }
+
+        // #[ink(message)]
+        // pub fn query_wait_vote(&mut self) -> alloc::vec::Vec<DisplayVote> {
+        //     let mut v: alloc::vec::Vec<DisplayVote> = alloc::vec::Vec::new();
+        //     for (_, val) in &self.votes {
+        //         if self.is_vote_wait(&val) {
+        //             let vote = self.convert_vote_to_displayvote(&val);
+        //             v.push(vote);
+        //         }
+        //     }
+        //     return v;
+        // }
  
-
-        fn format_choices_to_string(&self, source: &StorageBox<StorageVec<Choice>>) -> String {
-            let iter = source.iter();
-                let mut choices_vec = Vec::new();
-                for val in iter {
-                    let s = format!("{0}:{1}", val.content.clone(), val.yea);
-                    choices_vec.push(s);
-                }
-                let choices_content = choices_vec.join(","); 
-                return choices_content;
-        }
-
         fn convert_vote_to_displayvote(&self, vote: &Vote) -> DisplayVote {
-            let choices = &vote.choices;
-            let choices_content = self.format_choices_to_string(choices);
+            let mut choices = Vec::new();
+            let mut index = 0;
+            let source_choices = &self.choices;
+            for choice in source_choices.iter() {
+                if index >= vote.choice_index_lo && index < vote.choice_index_ho {
+                    let s = format!("{0}:{1}", choice.content.clone(), choice.yea);
+                    choices.push(s);
+                }
+                index += 1;
+            }
+            let choices_content = choices.join(","); 
             let vote = DisplayVote{
                 executed: vote.executed,
                 title: vote.title.clone(),
@@ -313,6 +331,35 @@ mod vote_manager {
 
         fn is_vote_finished(&self, vote: &Vote) -> bool {
             return self.env().block_timestamp() < vote.start_date + vote.vote_time;
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        // use super::*;
+        use ink_lang as ink;
+
+        #[ink::test]
+        fn test_split() {
+
+            let choices = "A,B,C".to_string();
+            let split = choices.split(",");
+            ink_env::debug_println("hello");
+            for s in split {
+                ink_env::debug_println(&s);
+            }
+        }
+
+        #[ink::test]
+        fn test_split_with_vec() {
+            let choices = "A,B,C".to_string();
+            let vec: Vec<&str> = choices.split(",").collect();
+            let i:u32 = 1;
+            let length = i + vec.len() as u32;
+            assert!(length == 4);
+            for s in vec{
+                ink_env::debug_println(&s);
+            }
         }
     }
 }
