@@ -70,7 +70,7 @@ mod vote_manager {
         desc: String,
         start_date: u64,
         vote_time: u64,
-        support_require_pct: u64,
+        support_require_num: u64,
         min_require_num: u64,
         support_num: u64,
         choice_index_lo: u32,
@@ -94,7 +94,7 @@ mod vote_manager {
         desc: String,
         start_date: u64,
         vote_time: u64,
-        support_require_pct: u64,
+        support_require_num: u64,
         min_require_num: u64,
         support_num: u64,
         choices: String,
@@ -150,7 +150,7 @@ mod vote_manager {
         }
 
         #[ink(message)]
-        pub fn new_vote(&mut self, title: String, desc: String, vote_time: u64, support_require_pct: u64, min_require_num: u64, choices: String) -> u64 {
+        pub fn new_vote(&mut self, title: String, desc: String, vote_time: u64, support_require_num: u64, min_require_num: u64, choices: String) -> u64 {
             let vote_id = self.votes_length.clone();
             self.votes_length += 1;
             let start_date: u64 = self.env().block_timestamp();
@@ -161,7 +161,7 @@ mod vote_manager {
                 desc,
                 start_date: start_date,
                 vote_time,
-                support_require_pct,
+                support_require_num,
                 min_require_num,
                 support_num: 0,
                 choice_index_lo: self.choices_num,
@@ -304,7 +304,7 @@ mod vote_manager {
                 desc: vote.desc.clone(),
                 start_date: vote.start_date,
                 vote_time: vote.vote_time,
-                support_require_pct: vote.support_require_pct,
+                support_require_num: vote.support_require_num,
                 min_require_num: vote.min_require_num,
                 support_num: vote.support_num,
                 choices: choices_content,
@@ -325,7 +325,7 @@ mod vote_manager {
         }
 
         fn is_vote_executed(&self, vote: &Vote) -> bool {
-            return !vote.executed;
+            return vote.executed;
         }
 
         fn is_vote_finished(&self, vote: &Vote) -> bool {
@@ -333,8 +333,6 @@ mod vote_manager {
         }
 
         fn can_execute(&self, vote: &Vote) -> bool {
-
-            let PCT_BASE:u64 = 1000;
 
             if vote.executed {
                 return false;
@@ -352,13 +350,9 @@ mod vote_manager {
             let choices = &self.choices;
             for choice in choices.iter() {
                 if index >= vote.choice_index_lo && index < vote.choice_index_ho {
-                    // let t : u64 = choice.yea.clone() * 1000 / vote.support_num.clone();
-                    let t : u64 = choice.yea.clone();
-                    let x = t * 20;
-                    // if t > vote.support_require_pct {
-                        // return true;
-                    // }
-                    return true;
+                    if choice.yea >= vote.support_require_num {
+                        return true;
+                    }
                 }
                 index += 1;
             }
