@@ -65,6 +65,7 @@ mod vote_manager {
         )
     )]
     pub struct Vote {
+        vote_id: VoteId,
         executed: bool,
         title: String,
         desc: String,
@@ -89,6 +90,7 @@ mod vote_manager {
         )
     )]
     pub struct DisplayVote {
+        vote_id: VoteId,
         executed: bool,
         title: String,
         desc: String,
@@ -154,8 +156,9 @@ mod vote_manager {
             let vote_id = self.votes_length.clone();
             self.votes_length += 1;
             let start_date: u64 = self.env().block_timestamp();
-            let vec: Vec<&str> = choices.split(",").collect();
+            let vec: Vec<&str> = choices.split("|").collect();
             let vote = Vote{
+                vote_id: vote_id,
                 executed: false,
                 title,
                 desc,
@@ -192,6 +195,9 @@ mod vote_manager {
             if self.can_execute(&vote) {
                 let mut vote = self.votes.get_mut(&vote_id).unwrap(); 
                 vote.executed = true;
+                self.env().emit_event(ExecuteVote{
+                    vote_id,
+                });
             }
             // true
         }
@@ -297,8 +303,9 @@ mod vote_manager {
                 }
                 index += 1;
             }
-            let choices_content = choices.join(","); 
+            let choices_content = choices.join("|"); 
             let vote = DisplayVote{
+                vote_id: vote.vote_id,
                 executed: vote.executed,
                 title: vote.title.clone(),
                 desc: vote.desc.clone(),
@@ -362,8 +369,13 @@ mod vote_manager {
 
     #[cfg(test)]
     mod tests {
-        // use super::*;
         use ink_lang as ink;
+
+        use super::*;
+        use ink_env::{
+            call,
+            test,
+        };
 
         #[ink::test]
         fn test_split() {
@@ -394,6 +406,48 @@ mod vote_manager {
             let support: u64 = 5;
             let t : u64 = choice * 1000 / support; 
             ink_env::debug_println(t.to_string().as_str());
+        }
+
+        #[ink::test]
+        fn new_vote_manager() {
+            // let accounts =
+            //     ink_env::test::default_accounts::<ink_env::DefaultEnvironment>()
+            //         .expect("Cannot get accounts");
+            let vote_manager = VoteManager::new();
+
+            assert_eq!(vote_manager.votes_length, 0);
+        }
+
+        #[ink::test]
+        fn full_test() {
+            let accounts =ink_env::test::default_accounts::<ink_env::DefaultEnvironment>().expect("Cannot get accounts");
+            let mut vote_manager = VoteManager::new();
+            
+            let r = vote_manager.new_vote("hello".to_string(), "hello world".to_string(), 100, 1, 0, "A|B|C".to_string());
+            assert_eq!(r, 0);
+
+            let vec1 = vote_manager.query_all_vote();
+            for elem in vec1.iter() {
+                let debug_info = format!("choice id: {}", &elem.choices);
+                ink_env::debug_println( &debug_info );
+            }
+
+            vote_manager.vote(0, 2, accounts.alice);
+
+            let vec2 = vote_manager.query_all_vote();
+            for elem in vec2.iter() {
+                let debug_info = format!("choice id: {}", &elem.choices);
+                ink_env::debug_println( &debug_info );
+            }
+
+
+            vote_manager.vote(0, 1, accounts.alice);
+
+            let vec3 = vote_manager.query_all_vote();
+            for elem in vec3.iter() {
+                let debug_info = format!("choice id: {}", &elem.choices);
+                ink_env::debug_println( &debug_info );
+            }
         }
     }
 }
