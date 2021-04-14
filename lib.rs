@@ -69,6 +69,7 @@ mod vote_manager {
         executed: bool,
         title: String,
         desc: String,
+        need_trigger: bool,
         start_date: u64,
         vote_time: u64,
         support_require_num: u64,
@@ -94,6 +95,7 @@ mod vote_manager {
         executed: bool,
         title: String,
         desc: String,
+        need_trigger: bool,
         start_date: u64,
         vote_time: u64,
         support_require_num: u64,
@@ -152,7 +154,7 @@ mod vote_manager {
         }
 
         #[ink(message)]
-        pub fn new_vote(&mut self, title: String, desc: String, vote_time: u64, support_require_num: u64, min_require_num: u64, choices: String) -> u64 {
+        pub fn new_vote(&mut self, title: String, desc: String, vote_time: u64, support_require_num: u64, min_require_num: u64, choices: String, need_trigger: bool) -> u64 {
             let vote_id = self.votes_length.clone();
             self.votes_length += 1;
             let start_date: u64 = self.env().block_timestamp();
@@ -164,6 +166,7 @@ mod vote_manager {
                 desc,
                 start_date: start_date,
                 vote_time,
+                need_trigger,
                 support_require_num,
                 min_require_num,
                 support_num: 0,
@@ -257,10 +260,10 @@ mod vote_manager {
         }
 
         #[ink(message)]
-        pub fn query_executed_vote(&self) -> alloc::vec::Vec<DisplayVote> {
+        pub fn query_history_vote(&self) -> alloc::vec::Vec<DisplayVote> {
             let mut v: alloc::vec::Vec<DisplayVote> = alloc::vec::Vec::new();
             for (_, val) in &self.votes {
-                if self.is_vote_executed(&val) {
+                if !self.is_vote_need_trigger(&val) || self.is_vote_executed(&val) {
                     let vote = self.convert_vote_to_displayvote(&val);
                     v.push(vote);
                 }
@@ -269,7 +272,7 @@ mod vote_manager {
         }
 
         #[ink(message)]
-        pub fn query_open_vote(&self) -> alloc::vec::Vec<DisplayVote> {
+        pub fn query_active_vote(&self) -> alloc::vec::Vec<DisplayVote> {
             let mut v: alloc::vec::Vec<DisplayVote> = alloc::vec::Vec::new();
             for (_, val) in &self.votes {
                 if self.is_vote_open(&val) {
@@ -281,7 +284,7 @@ mod vote_manager {
         }
 
         #[ink(message)]
-        pub fn query_wait_vote(&self) -> alloc::vec::Vec<DisplayVote> {
+        pub fn query_pending_vote(&self) -> alloc::vec::Vec<DisplayVote> {
             let mut v: alloc::vec::Vec<DisplayVote> = alloc::vec::Vec::new();
             for (_, val) in &self.votes {
                 if self.is_vote_wait(&val) {
@@ -311,6 +314,7 @@ mod vote_manager {
                 desc: vote.desc.clone(),
                 start_date: vote.start_date,
                 vote_time: vote.vote_time,
+                need_trigger: vote.need_trigger,
                 support_require_num: vote.support_require_num,
                 min_require_num: vote.min_require_num,
                 support_num: vote.support_num,
@@ -324,15 +328,19 @@ mod vote_manager {
         }
 
         fn is_vote_open(&self, vote: &Vote) -> bool {
-            return self.env().block_timestamp() < vote.start_date + vote.vote_time && !vote.executed;
+            return self.env().block_timestamp() < vote.start_date + vote.vote_time;
         }
 
         fn is_vote_wait(&self, vote: &Vote) -> bool {
-            return self.env().block_timestamp() > vote.start_date + vote.vote_time && !vote.executed;
+            return self.env().block_timestamp() > vote.start_date + vote.vote_time && vote.need_trigger && !vote.executed;
         }
 
         fn is_vote_executed(&self, vote: &Vote) -> bool {
             return vote.executed;
+        }
+
+        fn is_vote_need_trigger(&self, vote: &Vote) -> bool {
+            return vote.need_trigger;
         }
 
         fn is_vote_finished(&self, vote: &Vote) -> bool {
@@ -340,7 +348,9 @@ mod vote_manager {
         }
 
         fn can_execute(&self, vote: &Vote) -> bool {
-
+            if !vote.need_trigger {
+                return false;
+            }
             if vote.executed {
                 return false;
             }
